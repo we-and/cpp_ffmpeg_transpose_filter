@@ -22,10 +22,7 @@ This will install the FFmpeg libraries including libavcodec, libavformat, libsws
 
 Step 2: Clone the Repository
 Clone this repository to your local machine:
-```
-git clone https://github.com/yourusername/ffmpeg-transpose-filter.git
-cd ffmpeg-transpose-filter
-```
+
 Step 3: Compile the Program
 Use the following command to compile the code, specifying the paths to the FFmpeg libraries (Homebrew path shown here):
 ```
