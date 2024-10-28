@@ -1,6 +1,9 @@
 # FFmpeg Transpose Filter in C++
 This project implements a simple transpose filter for video files using FFmpeg in C++. The filter rotates video frames 90 degrees clockwise and outputs a transposed video file. It demonstrates how to use FFmpeg's libraries (libavcodec, libavformat, libswscale, and libavutil) to read, process, and write video frames programmatically in C++.
 
+![Screenshot](https://github.com/we-and/cpp_ffmpeg_transpose_filter/blob/main/screenshot1.png?raw=true)
+
+
 ### Features
 Transposes video frames by rotating 90 degrees clockwise.
 Reads from an input video file and writes to an output file.
