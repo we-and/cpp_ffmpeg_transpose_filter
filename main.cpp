@@ -1,143 +1,279 @@
-#include <iostream>
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libswscale/swscale.h>
-#include <libavutil/imgutils.h>
+#include <stdio.h>
+#include <stdlib.h>
+extern "C" {
+    #include <libavcodec/avcodec.h>
+    #include <libavformat/avformat.h>
+    #include <libavutil/imgutils.h>
+    #include <libswscale/swscale.h>
+}
 
-void transpose_frame(AVFrame* frame) {
-    int width = frame->width;
-    int height = frame->height;
-    uint8_t* src_data[4] = { frame->data[0], frame->data[1], frame->data[2], frame->data[3] };
-    int src_linesize[4] = { frame->linesize[0], frame->linesize[1], frame->linesize[2], frame->linesize[3] };
+class VideoTranspose {
+private:
+    AVFormatContext *inputFormatContext = nullptr;
+    AVFormatContext *outputFormatContext = nullptr;
+    AVCodecContext *inputCodecContext = nullptr;
+    AVCodecContext *outputCodecContext = nullptr;
+    AVStream *inputVideoStream = nullptr;
+    AVStream *outputVideoStream = nullptr;
+    int videoStreamIndex = -1;
+    AVFrame *frame = nullptr;
+    AVFrame *transposedFrame = nullptr;
+    AVPacket *packet = nullptr;
 
-    // Create a new frame for the transposed output
-    AVFrame* transposed_frame = av_frame_alloc();
-    transposed_frame->format = frame->format;
-    transposed_frame->width = height;
-    transposed_frame->height = width;
-
-    // Allocate buffer for the new frame
-    av_image_alloc(transposed_frame->data, transposed_frame->linesize, transposed_frame->width, transposed_frame->height, (AVPixelFormat)frame->format, 1);
-
-    // Transpose (rotate 90 degrees clockwise)
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int src_index = y * frame->linesize[0] + x * 3;      // RGB pixel size = 3
-            int dst_index = x * transposed_frame->linesize[0] + (height - y - 1) * 3;
+    void transpose90Degrees(AVFrame *src, AVFrame *dst) {
+        for (int plane = 0; plane < 3; plane++) {
+            uint8_t *srcData = src->data[plane];
+            uint8_t *dstData = dst->data[plane];
+            int srcLinesize = src->linesize[plane];
+            int dstLinesize = dst->linesize[plane];
             
-            transposed_frame->data[0][dst_index + 0] = frame->data[0][src_index + 0]; // Red
-            transposed_frame->data[0][dst_index + 1] = frame->data[0][src_index + 1]; // Green
-            transposed_frame->data[0][dst_index + 2] = frame->data[0][src_index + 2]; // Blue
-        }
-    }
-
-    // Free the original frame data and set it to the transposed frame
-    av_freep(&frame->data[0]);
-    frame->data[0] = transposed_frame->data[0];
-    frame->linesize[0] = transposed_frame->linesize[0];
-    frame->width = transposed_frame->width;
-    frame->height = transposed_frame->height;
-
-    // Free transposed_frame structure (without freeing data, as it now belongs to the main frame)
-    av_frame_free(&transposed_frame);
-}
-
-int main(int argc, char* argv[]) {
-//    av_register_all();
-//    avcodec_register_all();
-
-    const char* input_file = "input.mp4";
-    const char* output_file = "output_transposed.mp4";
-
-    // Open input and output files
-    AVFormatContext* input_format_ctx = nullptr;
-    avformat_open_input(&input_format_ctx, input_file, nullptr, nullptr);
-    avformat_find_stream_info(input_format_ctx, nullptr);
-
-    AVFormatContext* output_format_ctx = nullptr;
-    avformat_alloc_output_context2(&output_format_ctx, nullptr, nullptr, output_file);
-
-    // Find video stream index
-    int video_stream_index = -1;
-    for (int i = 0; i < input_format_ctx->nb_streams; ++i) {
-        if (input_format_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            video_stream_index = i;
-            break;
-        }
-    }
-
-    // Copy video stream codec parameters
-    AVStream* video_stream = input_format_ctx->streams[video_stream_index];
-  const AVCodec* codec = avcodec_find_decoder(video_stream->codecpar->codec_id);
-    AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
-    avcodec_parameters_to_context(codec_ctx, video_stream->codecpar);
-    avcodec_open2(codec_ctx, codec, nullptr);
-
-    // Encoding
-   const 
-   AVCodec* encoder = avcodec_find_encoder(codec_ctx->codec_id);
-    AVCodecContext* encoder_ctx = avcodec_alloc_context3(encoder);
-    encoder_ctx->width = codec_ctx->height;
-    encoder_ctx->height = codec_ctx->width;
-    encoder_ctx->pix_fmt = codec_ctx->pix_fmt;
-    encoder_ctx->time_base = video_stream->time_base;
-    avcodec_open2(encoder_ctx, encoder, nullptr);
-
-    // Create new output stream and copy codec parameters
-    AVStream* out_stream = avformat_new_stream(output_format_ctx, encoder);
-    avcodec_parameters_from_context(out_stream->codecpar, encoder_ctx);
-
-    avio_open(&output_format_ctx->pb, output_file, AVIO_FLAG_WRITE);
-    int ret = avformat_write_header(output_format_ctx, nullptr);
-    if (ret < 0) {
-        std::cerr << "Error occurred while writing header: " << av_err2str(ret) << std::endl;
-        // Handle the error appropriately (e.g., cleanup and return an error code)
-        return ret;
-    }
-
-    // Read, process, and encode each frame
-   AVPacket* packet = av_packet_alloc();
-if (!packet) {
-    std::cerr << "Could not allocate AVPacket" << std::endl;
-    return -1;  // Handle error appropriately
-}
-
-    AVFrame* frame = av_frame_alloc();
-    while (av_read_frame(input_format_ctx, packet) >= 0) {
-    if (packet->stream_index == video_stream_index) {
-        avcodec_send_packet(codec_ctx, packet);
-        if (avcodec_receive_frame(codec_ctx, frame) == 0) {
-           
-                transpose_frame(frame);
-                avcodec_send_frame(encoder_ctx, frame);
-               AVPacket* out_packet = av_packet_alloc();
-                if (!out_packet) {
-                    std::cerr << "Could not allocate AVPacket" << std::endl;
-                    return -1;  // Handle error appropriately
+            int width = plane == 0 ? src->width : src->width / 2;
+            int height = plane == 0 ? src->height : src->height / 2;
+            
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    dstData[x * dstLinesize + (height - 1 - y)] = 
+                        srcData[y * srcLinesize + x];
                 }
-
-                if (avcodec_receive_packet(encoder_ctx, out_packet) == 0) {
-                    out_packet->stream_index = out_stream->index;
-                    av_write_frame(output_format_ctx, out_packet);
-                    av_packet_unref(out_packet);  // Unref packet to reuse it
-                }
-
-                // Free the allocated packet when done
-                av_packet_free(&out_packet);
             }
         }
-        av_packet_unref(packet);
     }
 
-    // Cleanup
-    av_write_trailer(output_format_ctx);
-    avcodec_close(codec_ctx);
-    avcodec_close(encoder_ctx);
-    avformat_close_input(&input_format_ctx);
-    avio_close(output_format_ctx->pb);
-    avformat_free_context(output_format_ctx);
-    av_frame_free(&frame);
+public:
+    ~VideoTranspose() {
+        if (frame) av_frame_free(&frame);
+        if (transposedFrame) av_frame_free(&transposedFrame);
+        if (packet) av_packet_free(&packet);
+        if (inputCodecContext) avcodec_free_context(&inputCodecContext);
+        if (outputCodecContext) avcodec_free_context(&outputCodecContext);
+        if (inputFormatContext) avformat_close_input(&inputFormatContext);
+        if (outputFormatContext) {
+            if (!(outputFormatContext->flags & AVFMT_NOFILE))
+                avio_closep(&outputFormatContext->pb);
+            avformat_free_context(outputFormatContext);
+        }
+    }
 
-    std::cout << "Transposed video saved as " << output_file << std::endl;
+    bool openInput(const char* inputFile) {
+        if (avformat_open_input(&inputFormatContext, inputFile, nullptr, nullptr) < 0) {
+            fprintf(stderr, "Could not open input file\n");
+            return false;
+        }
+
+        if (avformat_find_stream_info(inputFormatContext, nullptr) < 0) {
+            fprintf(stderr, "Could not find stream info\n");
+            return false;
+        }
+
+        // Find video stream
+        for (unsigned int i = 0; i < inputFormatContext->nb_streams; i++) {
+            if (inputFormatContext->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                videoStreamIndex = i;
+                break;
+            }
+        }
+
+        if (videoStreamIndex == -1) {
+            fprintf(stderr, "Could not find video stream\n");
+            return false;
+        }
+
+        inputVideoStream = inputFormatContext->streams[videoStreamIndex];
+        
+        // Find decoder
+        const AVCodec *decoder = avcodec_find_decoder(inputVideoStream->codecpar->codec_id);
+        if (!decoder) {
+            fprintf(stderr, "Could not find decoder\n");
+            return false;
+        }
+
+        // Allocate codec context
+        inputCodecContext = avcodec_alloc_context3(decoder);
+        if (!inputCodecContext) {
+            fprintf(stderr, "Could not allocate decoder context\n");
+            return false;
+        }
+
+        if (avcodec_parameters_to_context(inputCodecContext, inputVideoStream->codecpar) < 0) {
+            fprintf(stderr, "Could not copy codec params to codec context\n");
+            return false;
+        }
+
+        if (avcodec_open2(inputCodecContext, decoder, nullptr) < 0) {
+            fprintf(stderr, "Could not open codec\n");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool setupOutput(const char* outputFile) {
+        avformat_alloc_output_context2(&outputFormatContext, nullptr, nullptr, outputFile);
+        if (!outputFormatContext) {
+            fprintf(stderr, "Could not create output context\n");
+            return false;
+        }
+
+        // Create output video stream
+        const AVCodec *encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+        if (!encoder) {
+            fprintf(stderr, "Could not find encoder\n");
+            return false;
+        }
+
+        outputVideoStream = avformat_new_stream(outputFormatContext, nullptr);
+        if (!outputVideoStream) {
+            fprintf(stderr, "Could not create output stream\n");
+            return false;
+        }
+
+        outputCodecContext = avcodec_alloc_context3(encoder);
+        if (!outputCodecContext) {
+            fprintf(stderr, "Could not allocate encoder context\n");
+            return false;
+        }
+
+        // Set output parameters (note: height and width are swapped for 90-degree rotation)
+        outputCodecContext->height = inputCodecContext->width;
+        outputCodecContext->width = inputCodecContext->height;
+        outputCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+        outputCodecContext->bit_rate = 2000000;
+        outputCodecContext->time_base = (AVRational){1, 25};
+        outputCodecContext->framerate = (AVRational){25, 1};
+        outputCodecContext->gop_size = 10;
+        outputCodecContext->max_b_frames = 1;
+
+        if (outputFormatContext->oformat->flags & AVFMT_GLOBALHEADER)
+            outputCodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+
+        if (avcodec_open2(outputCodecContext, encoder, nullptr) < 0) {
+            fprintf(stderr, "Could not open encoder\n");
+            return false;
+        }
+
+        if (avcodec_parameters_from_context(outputVideoStream->codecpar, outputCodecContext) < 0) {
+            fprintf(stderr, "Could not copy encoder parameters to output stream\n");
+            return false;
+        }
+
+        if (!(outputFormatContext->oformat->flags & AVFMT_NOFILE)) {
+            if (avio_open(&outputFormatContext->pb, outputFile, AVIO_FLAG_WRITE) < 0) {
+                fprintf(stderr, "Could not open output file\n");
+                return false;
+            }
+        }
+
+        if (avformat_write_header(outputFormatContext, nullptr) < 0) {
+            fprintf(stderr, "Error writing header\n");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool process() {
+        frame = av_frame_alloc();
+        transposedFrame = av_frame_alloc();
+        packet = av_packet_alloc();
+        
+        if (!frame || !transposedFrame || !packet) {
+            fprintf(stderr, "Could not allocate frame or packet\n");
+            return false;
+        }
+
+        // Allocate transposed frame buffer
+        transposedFrame->format = outputCodecContext->pix_fmt;
+        transposedFrame->width = outputCodecContext->width;
+        transposedFrame->height = outputCodecContext->height;
+        if (av_frame_get_buffer(transposedFrame, 0) < 0) {
+            fprintf(stderr, "Could not allocate transposed frame buffer\n");
+            return false;
+        }
+
+        while (av_read_frame(inputFormatContext, packet) >= 0) {
+            if (packet->stream_index == videoStreamIndex) {
+                int response = avcodec_send_packet(inputCodecContext, packet);
+                if (response < 0) {
+                    fprintf(stderr, "Error sending packet for decoding\n");
+                    return false;
+                }
+
+                while (response >= 0) {
+                    response = avcodec_receive_frame(inputCodecContext, frame);
+                    if (response == AVERROR(EAGAIN) || response == AVERROR_EOF)
+                        break;
+                    else if (response < 0) {
+                        fprintf(stderr, "Error receiving frame\n");
+                        return false;
+                    }
+
+                    // Transpose frame
+                    transpose90Degrees(frame, transposedFrame);
+                    transposedFrame->pts = frame->pts;
+
+                    // Encode transposed frame
+                    if (avcodec_send_frame(outputCodecContext, transposedFrame) < 0) {
+                        fprintf(stderr, "Error sending frame for encoding\n");
+                        return false;
+                    }
+
+                    while (true) {
+                        AVPacket *outPacket = av_packet_alloc();
+                        response = avcodec_receive_packet(outputCodecContext, outPacket);
+                        if (response == AVERROR(EAGAIN) || response == AVERROR_EOF) {
+                            av_packet_free(&outPacket);
+                            break;
+                        } else if (response < 0) {
+                            fprintf(stderr, "Error receiving packet from encoder\n");
+                            av_packet_free(&outPacket);
+                            return false;
+                        }
+
+                        outPacket->stream_index = 0;
+                        av_packet_rescale_ts(outPacket, outputCodecContext->time_base, 
+                                           outputVideoStream->time_base);
+
+                        response = av_interleaved_write_frame(outputFormatContext, outPacket);
+                        av_packet_free(&outPacket);
+                        if (response < 0) {
+                            fprintf(stderr, "Error writing frame\n");
+                            return false;
+                        }
+                    }
+                }
+            }
+            av_packet_unref(packet);
+        }
+
+        // Write trailer
+        av_write_trailer(outputFormatContext);
+        return true;
+    }
+};
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <input_file> <output_file>\n", argv[0]);
+        return 1;
+    }
+
+    VideoTranspose transposer;
+    
+    if (!transposer.openInput(argv[1])) {
+        fprintf(stderr, "Failed to open input\n");
+        return 1;
+    }
+
+    if (!transposer.setupOutput(argv[2])) {
+        fprintf(stderr, "Failed to setup output\n");
+        return 1;
+    }
+
+    if (!transposer.process()) {
+        fprintf(stderr, "Failed to process video\n");
+        return 1;
+    }
+
+    printf("Video processing completed successfully\n");
     return 0;
 }
