@@ -33,11 +33,10 @@ If you’re on an Apple Silicon Mac, your paths might be under /opt/homebrew/ in
 ### Usage
 Once compiled, you can use the program to transpose a video file. Here’s how:
 ```
-./transpose input.mp4 output_transposed.mp4
+./transpose input.mp4 output.mp4
 ```
-This command reads input.mp4, rotates each frame 90 degrees clockwise, and saves the result to output_transposed.mp4.
+This command reads input.mp4, rotates each frame 90 degrees clockwise, and saves the result to output.mp4.
 
 ### Code Overview
 main.cpp: The main source file containing the transpose filter logic.
-transpose_frame(): A function that rotates each video frame by 90 degrees clockwise.
-FFmpeg Setup: The code initializes FFmpeg, reads frames, applies the transpose filter, encodes the frames, and writes the output video.
+VideoTranspose: A class where the 'process' function rotates each video frame by 90 degrees clockwise.
