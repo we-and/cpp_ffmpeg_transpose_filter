@@ -43,8 +43,8 @@ void transpose_frame(AVFrame* frame) {
 }
 
 int main(int argc, char* argv[]) {
-    av_register_all();
-    avcodec_register_all();
+//    av_register_all();
+//    avcodec_register_all();
 
     const char* input_file = "input.mp4";
     const char* output_file = "output_transposed.mp4";
@@ -68,13 +68,14 @@ int main(int argc, char* argv[]) {
 
     // Copy video stream codec parameters
     AVStream* video_stream = input_format_ctx->streams[video_stream_index];
-    AVCodec* codec = avcodec_find_decoder(video_stream->codecpar->codec_id);
+  const AVCodec* codec = avcodec_find_decoder(video_stream->codecpar->codec_id);
     AVCodecContext* codec_ctx = avcodec_alloc_context3(codec);
     avcodec_parameters_to_context(codec_ctx, video_stream->codecpar);
     avcodec_open2(codec_ctx, codec, nullptr);
 
     // Encoding
-    AVCodec* encoder = avcodec_find_encoder(codec_ctx->codec_id);
+   const 
+   AVCodec* encoder = avcodec_find_encoder(codec_ctx->codec_id);
     AVCodecContext* encoder_ctx = avcodec_alloc_context3(encoder);
     encoder_ctx->width = codec_ctx->height;
     encoder_ctx->height = codec_ctx->width;
@@ -87,31 +88,45 @@ int main(int argc, char* argv[]) {
     avcodec_parameters_from_context(out_stream->codecpar, encoder_ctx);
 
     avio_open(&output_format_ctx->pb, output_file, AVIO_FLAG_WRITE);
-    avformat_write_header(output_format_ctx, nullptr);
+    int ret = avformat_write_header(output_format_ctx, nullptr);
+    if (ret < 0) {
+        std::cerr << "Error occurred while writing header: " << av_err2str(ret) << std::endl;
+        // Handle the error appropriately (e.g., cleanup and return an error code)
+        return ret;
+    }
 
     // Read, process, and encode each frame
-    AVPacket packet;
-    av_init_packet(&packet);
-    packet.data = nullptr;
-    packet.size = 0;
+   AVPacket* packet = av_packet_alloc();
+if (!packet) {
+    std::cerr << "Could not allocate AVPacket" << std::endl;
+    return -1;  // Handle error appropriately
+}
 
     AVFrame* frame = av_frame_alloc();
-    while (av_read_frame(input_format_ctx, &packet) >= 0) {
-        if (packet.stream_index == video_stream_index) {
-            avcodec_send_packet(codec_ctx, &packet);
-            if (avcodec_receive_frame(codec_ctx, frame) == 0) {
+    while (av_read_frame(input_format_ctx, packet) >= 0) {
+    if (packet->stream_index == video_stream_index) {
+        avcodec_send_packet(codec_ctx, packet);
+        if (avcodec_receive_frame(codec_ctx, frame) == 0) {
+           
                 transpose_frame(frame);
                 avcodec_send_frame(encoder_ctx, frame);
-                AVPacket out_packet;
-                av_init_packet(&out_packet);
-                if (avcodec_receive_packet(encoder_ctx, &out_packet) == 0) {
-                    out_packet.stream_index = out_stream->index;
-                    av_write_frame(output_format_ctx, &out_packet);
-                    av_packet_unref(&out_packet);
+               AVPacket* out_packet = av_packet_alloc();
+                if (!out_packet) {
+                    std::cerr << "Could not allocate AVPacket" << std::endl;
+                    return -1;  // Handle error appropriately
                 }
+
+                if (avcodec_receive_packet(encoder_ctx, out_packet) == 0) {
+                    out_packet->stream_index = out_stream->index;
+                    av_write_frame(output_format_ctx, out_packet);
+                    av_packet_unref(out_packet);  // Unref packet to reuse it
+                }
+
+                // Free the allocated packet when done
+                av_packet_free(&out_packet);
             }
         }
-        av_packet_unref(&packet);
+        av_packet_unref(packet);
     }
 
     // Cleanup
