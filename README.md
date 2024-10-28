@@ -11,8 +11,8 @@ Demonstrates the use of FFmpeg libraries in a C++ environment.
 
 ### Requirements
 FFmpeg libraries: libavcodec, libavformat, libswscale, libavutil.
-C++ Compiler: A C++11-compatible compiler (e.g., g++).
-macOS (other Unix-like systems should work with slight modifications).
+C++ Compiler: A C++11-compatible compiler.
+macOS or Ubuntu
 
 ### Installation
 Step 1: Install FFmpeg Libraries
