@@ -42,4 +42,5 @@ This command reads input.mp4, rotates each frame 90 degrees clockwise, and saves
 
 ### Code Overview
 main.cpp: The main source file containing the transpose filter logic.
+
 VideoTranspose: A class where the 'process' function rotates each video frame by 90 degrees clockwise.
